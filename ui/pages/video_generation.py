@@ -129,7 +129,6 @@ def render(project: ProjectState) -> None:
                 duration=duration,
                 aspect_ratio=aspect_ratio,
             )
-        st.session_state["_poll_timer"] = time.time()
         st.rerun()
 
     # Video grid
