@@ -145,7 +145,7 @@ def render() -> None:
             use_container_width=True,
             key="welcome_continue",
         ):
-            st.session_state["welcome_dismissed"] = True
+            st.session_state["show_welcome"] = False
             st.rerun()
 
     # ── Tiny footer ──
