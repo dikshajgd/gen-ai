@@ -43,9 +43,9 @@ PROVIDER_VEO = "veo"
 # (provider_id, model_id, ui_label, notes_for_user)
 PROVIDER_CATALOG: list[tuple[str, str, str, str]] = [
     # Kling Direct — needs Access Key + Secret Key
-    (PROVIDER_KLING_DIRECT, MODEL_KLING_2_6_PRO, "Kling 2.6 Pro (direct)", "Latest Kling, JWT auth"),
+    (PROVIDER_KLING_DIRECT, MODEL_KLING_2_6_PRO, "Kling 2.1 Master (direct)", "Latest Kling, JWT auth"),
     (PROVIDER_KLING_DIRECT, MODEL_KLING_2_MASTER, "Kling 2 Master (direct)", "JWT auth"),
-    (PROVIDER_KLING_DIRECT, MODEL_KLING_1_6_PRO, "Kling 1.6 Pro (direct)", "JWT auth"),
+    (PROVIDER_KLING_DIRECT, MODEL_KLING_1_6_PRO, "Kling 1.6 (direct)", "JWT auth"),
 
     # Google Veo — uses the existing Gemini key
     (PROVIDER_VEO, MODEL_VEO_3_FAST, "Veo 3 Fast (Gemini key)", "Cheaper, 8s clips"),

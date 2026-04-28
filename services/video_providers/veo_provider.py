@@ -60,8 +60,11 @@ class VeoProvider(VideoProvider):
 
         try:
             image = types.Image(image_bytes=image_bytes, mime_type="image/png")
+            # Veo accepts 4-8s only; clamp so the shared duration radio (which
+            # also offers 10s for Kling/Replicate) doesn't break Veo runs.
+            clamped_duration = max(4, min(8, int(duration_sec)))
             config = types.GenerateVideosConfig(
-                duration_seconds=int(duration_sec),
+                duration_seconds=clamped_duration,
                 aspect_ratio=aspect_ratio if aspect_ratio in ("16:9", "9:16") else "16:9",
                 number_of_videos=1,
             )

@@ -36,9 +36,15 @@ JWT_TTL_SEC = 1800
 JWT_NBF_SKEW_SEC = 5
 
 # Kling model identifiers as expected by the Open Platform API.
-MODEL_KLING_2_6_PRO = "kling-v2-6-pro"  # Kling 2.6 Pro
-MODEL_KLING_2_MASTER = "kling-v2-master"  # Kling 2.x Master
-MODEL_KLING_1_6_PRO = "kling-v1-6-pro"  # 1.6 Pro fallback
+# The "pro" / "std" distinction is conveyed via the `mode` field in the body,
+# not the model_name. Names below are the values Kling's API actually accepts.
+MODEL_KLING_2_1_MASTER = "kling-v2-1-master"  # Kling 2.1 Master (latest)
+MODEL_KLING_2_MASTER = "kling-v2-master"      # Kling 2.x Master
+MODEL_KLING_1_6 = "kling-v1-6"                # Kling 1.6 fallback
+
+# Back-compat aliases for code that still imports the old names.
+MODEL_KLING_2_6_PRO = MODEL_KLING_2_1_MASTER
+MODEL_KLING_1_6_PRO = MODEL_KLING_1_6
 
 
 class KlingDirectProvider(VideoProvider):
