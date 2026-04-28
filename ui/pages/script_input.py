@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.models import ProjectState, Scene, SceneImage
 from core.constants import MAX_SCRIPT_LENGTH, MAX_SCENES
+from config import get_gemini_api_key
 from services.gemini_client import GeminiClient
 from services.script_parser import ScriptParser
 
@@ -35,7 +36,7 @@ def render(project: ProjectState) -> None:
                 st.error("Please enter a script first.")
                 return
 
-            api_key = st.session_state.get("gemini_api_key", "")
+            api_key = get_gemini_api_key()
             gemini = GeminiClient(api_key) if api_key else None
             parser = ScriptParser(gemini)
 

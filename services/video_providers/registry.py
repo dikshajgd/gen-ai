@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from typing import Iterable
 
-import streamlit as st
-
+from config import (
+    get_gemini_api_key,
+    get_kling_access_key,
+    get_kling_secret_key,
+    get_replicate_api_token,
+)
 from services.video_providers.base import VideoProvider, VideoProviderError
 from services.video_providers.kling_direct import (
     KlingDirectProvider,
@@ -67,48 +71,39 @@ def models_for_provider(provider_id: str) -> Iterable[tuple[str, str]]:
 
 
 def get_provider(provider_id: str) -> VideoProvider:
-    """Construct a provider, sourcing its credentials from session state.
-
-    Each provider knows what it needs:
-      - Kling Direct: kling_access_key + kling_secret_key
-      - Replicate:    replicate_api_token
-      - Veo:          gemini_api_key
-    """
+    """Construct a provider, sourcing credentials from Streamlit secrets / env."""
     if provider_id == PROVIDER_KLING_DIRECT:
-        access = st.session_state.get("kling_access_key", "").strip()
-        secret = st.session_state.get("kling_secret_key", "").strip()
+        access = get_kling_access_key().strip()
+        secret = get_kling_secret_key().strip()
         if not access or not secret:
             raise VideoProviderError(
-                "Kling Direct needs both Access Key and Secret Key. Add them in the welcome screen."
+                "Kling Direct needs KLING_ACCESS_KEY and KLING_SECRET_KEY in app secrets."
             )
         return KlingDirectProvider(access_key=access, secret_key=secret)
 
     if provider_id == PROVIDER_REPLICATE:
-        token = st.session_state.get("replicate_api_token", "").strip()
+        token = get_replicate_api_token().strip()
         if not token:
             raise VideoProviderError(
-                "Replicate needs an API token. Add it in the welcome screen."
+                "Replicate needs REPLICATE_API_TOKEN in app secrets."
             )
         return ReplicateProvider(api_token=token)
 
     if provider_id == PROVIDER_VEO:
-        key = st.session_state.get("gemini_api_key", "").strip()
+        key = get_gemini_api_key().strip()
         if not key:
-            raise VideoProviderError("Veo uses the Gemini API key — add it in the welcome screen.")
+            raise VideoProviderError("Veo needs GEMINI_API_KEY in app secrets.")
         return VeoProvider(api_key=key)
 
     raise VideoProviderError(f"Unknown provider id: {provider_id!r}")
 
 
 def is_provider_available(provider_id: str) -> bool:
-    """True if the session has the credentials this provider needs."""
+    """True if app secrets / env contain the credentials this provider needs."""
     if provider_id == PROVIDER_KLING_DIRECT:
-        return bool(
-            st.session_state.get("kling_access_key", "").strip()
-            and st.session_state.get("kling_secret_key", "").strip()
-        )
+        return bool(get_kling_access_key().strip() and get_kling_secret_key().strip())
     if provider_id == PROVIDER_REPLICATE:
-        return bool(st.session_state.get("replicate_api_token", "").strip())
+        return bool(get_replicate_api_token().strip())
     if provider_id == PROVIDER_VEO:
-        return bool(st.session_state.get("gemini_api_key", "").strip())
+        return bool(get_gemini_api_key().strip())
     return False

@@ -11,6 +11,7 @@ from core.constants import (
     KLING_ASPECT_RATIOS,
     KLING_POLL_INTERVAL_SEC,
 )
+from config import get_gemini_api_key
 from services.gemini_client import GeminiClient
 from services.script_parser import ScriptParser
 from services.video_providers import (
@@ -104,7 +105,7 @@ def render(project: ProjectState) -> None:
             disabled=len(not_started) == 0 or not provider_ready,
             type="primary",
             key="gen_all_vids_btn",
-            help=None if provider_ready else "This provider needs credentials — add them on the welcome screen.",
+            help=None if provider_ready else "This provider's credentials are missing from app secrets.",
         )
 
     if generate_all:
@@ -223,8 +224,7 @@ def _render_provider_picker(project: ProjectState) -> tuple[str, str]:
 
     if not is_provider_available(chosen_pid):
         st.warning(
-            "🔒 This provider needs credentials. Open the welcome screen "
-            "(sidebar → 🔑 Manage keys) to add them."
+            "🔒 This provider's credentials are missing from app secrets."
         )
 
     return chosen_pid, chosen_mid
@@ -275,7 +275,7 @@ def _ensure_video_prompts(project: ProjectState, approved_indices: list[int]) ->
     if not needs_prompts:
         return
 
-    api_key = st.session_state.get("gemini_api_key", "")
+    api_key = get_gemini_api_key()
     if not api_key:
         return
 

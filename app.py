@@ -38,13 +38,6 @@ def main():
     project: ProjectState = st.session_state["project"]
     store: ProjectStore = st.session_state["project_store"]
 
-    # Welcome / BYOK gate — shown on first visit (no Gemini key) or when the
-    # user explicitly clicks "Manage keys" from the sidebar.
-    if st.session_state.get("show_welcome", False):
-        from ui.pages.welcome import render as render_welcome
-        render_welcome()
-        return
-
     # Sidebar
     with st.sidebar:
         st.title("Scene Studio")
@@ -147,18 +140,14 @@ def main():
 
         st.divider()
 
-        # API key status
+        # API key status (read from app secrets)
         st.subheader("API Keys")
-        gemini_key = st.session_state.get("gemini_api_key", "")
-        kling_access = st.session_state.get("kling_access_key", "")
-
-        st.markdown(f"Gemini: {'✅ Set' if gemini_key else '❌ Missing'}")
-        st.markdown(f"Video (fal.ai): {'✅ Set' if kling_access else '⚪️ Optional'}")
-        st.caption("Keys stay in your browser session only.")
-
-        if st.button("🔑 Manage keys", key="sidebar_manage_keys", use_container_width=True):
-            st.session_state["show_welcome"] = True
-            st.rerun()
+        st.markdown(f"Gemini: {'✅ Set' if get_gemini_api_key() else '❌ Missing'}")
+        st.markdown(
+            f"Kling: {'✅ Set' if (get_kling_access_key() and get_kling_secret_key()) else '⚪️ Optional'}"
+        )
+        st.markdown(f"Replicate: {'✅ Set' if get_replicate_api_token() else '⚪️ Optional'}")
+        st.caption("Loaded from Streamlit app secrets.")
 
     # Main content - render current step
     if project.current_step == 1:
@@ -182,24 +171,6 @@ def _init_session_state():
 
     if "project" not in st.session_state:
         st.session_state["project"] = ProjectState()
-
-    if "gemini_api_key" not in st.session_state:
-        st.session_state["gemini_api_key"] = get_gemini_api_key()
-
-    if "kling_access_key" not in st.session_state:
-        st.session_state["kling_access_key"] = get_kling_access_key()
-
-    if "kling_secret_key" not in st.session_state:
-        st.session_state["kling_secret_key"] = get_kling_secret_key()
-
-    if "replicate_api_token" not in st.session_state:
-        st.session_state["replicate_api_token"] = get_replicate_api_token()
-
-    # Show the welcome/BYOK gate on first visit if no Gemini key was injected
-    # via secrets/env. Once the user dismisses welcome, it stays dismissed
-    # until they click "Manage keys" in the sidebar.
-    if "show_welcome" not in st.session_state:
-        st.session_state["show_welcome"] = not st.session_state["gemini_api_key"]
 
 
 if __name__ == "__main__":

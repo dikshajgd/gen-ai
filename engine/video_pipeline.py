@@ -46,11 +46,24 @@ class VideoPipeline:
         provider_id = self.default_provider_id
         model_name = self.default_model
 
+        # Build the provider on the main thread — get_provider() reads
+        # st.session_state, which is not accessible from worker threads on
+        # Streamlit Cloud. Reusing one provider across workers is safe;
+        # providers carry only credentials and are stateless per request.
+        try:
+            provider = get_provider(provider_id)
+        except VideoProviderError as e:
+            for idx in approved_indices:
+                video = videos[idx]
+                video.status = VideoStatus.FAILED
+                video.error_message = str(e)
+                video.generation_attempts += 1
+            return videos
+
         def _submit_one(idx: int) -> tuple[int, str | None, str | None]:
             img = images[idx]
             prompt = scenes_prompts.get(idx, "")
             try:
-                provider = get_provider(provider_id)
                 if not img.image_b64:
                     return idx, None, "Source image missing — cannot generate video."
                 image_bytes = base64.b64decode(img.image_b64)

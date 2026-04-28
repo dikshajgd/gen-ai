@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.models import ProjectState, SceneStatus, SceneVideo, VideoStatus
 from core.constants import SCENE_GRID_COLUMNS
+from config import get_gemini_api_key
 from services.gemini_client import GeminiClient
 from engine.image_pipeline import ImagePipeline
 from ui.components.scene_card import render_image_card
@@ -60,9 +61,9 @@ def render(project: ProjectState) -> None:
 
     # Generate all
     if generate_all:
-        api_key = st.session_state.get("gemini_api_key", "")
+        api_key = get_gemini_api_key()
         if not api_key:
-            st.error("Please set your Gemini API key in Settings.")
+            st.error("GEMINI_API_KEY is missing from app secrets.")
             return
 
         st.session_state["_generating"] = True
@@ -121,7 +122,7 @@ def render(project: ProjectState) -> None:
                     st.rerun()
 
                 if actions["regenerate"]:
-                    api_key = st.session_state.get("gemini_api_key", "")
+                    api_key = get_gemini_api_key()
                     if api_key:
                         client = GeminiClient(api_key)
                         pipeline = ImagePipeline(client)

@@ -14,6 +14,7 @@ import streamlit as st
 
 from core.constants import STYLE_PRESETS, SUPPORTED_IMAGE_TYPES
 from core.models import CharacterProfile, ProjectState
+from config import get_gemini_api_key
 from services.gemini_client import GeminiClient
 from services.style_analyzer import StyleAnalyzer
 from utils.image_utils import resize_image_if_needed
@@ -86,9 +87,9 @@ def render(project: ProjectState) -> None:
         disabled=not has_input,
         key="analyze_brief_btn",
     ):
-        api_key = st.session_state.get("gemini_api_key", "")
+        api_key = get_gemini_api_key()
         if not api_key:
-            st.error("Please set your Gemini API key first (sidebar → 🔑 Manage keys).")
+            st.error("GEMINI_API_KEY is missing from app secrets.")
             return
 
         with st.spinner("Analyzing your visual style..."):
