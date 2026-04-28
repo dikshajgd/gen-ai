@@ -146,27 +146,42 @@ def _build_prompt(
     scene: Scene,
     extra_guidance: str = "",
 ) -> str:
-    """Compose the full image-gen prompt: consistency prefix + scene content.
+    """Compose the full image-gen prompt.
 
-    The consistency prefix is built fresh each call so it survives conversation
-    history truncation. Scene-level `style_override` takes precedence over the
-    global character style prefix.
+    Phrasing matters a lot for `gemini-2.5-flash-image` (nano-banana). The
+    model can be over-conservative if it reads the reference image as the
+    *target output* — it'll refuse new poses/actions. We explicitly grant
+    permission to reimagine the character in new scenes while preserving
+    their identity.
+
+    The consistency prefix is built fresh each call so it survives
+    conversation history truncation. Scene-level `style_override` takes
+    precedence over the global character style prefix.
     """
     style = scene.style_override.strip() or character.style_prompt_prefix.strip()
-
-    lines: list[str] = []
-    if style:
-        lines.append(f"Style: {style}")
-    if character.character_description.strip():
-        lines.append(f"Character (keep consistent across all scenes): {character.character_description.strip()}")
-
+    char_desc = character.character_description.strip()
     scene_body = scene.image_prompt.strip() or scene.description.strip()
 
-    prompt_parts: list[str] = []
-    if lines:
-        prompt_parts.append("\n".join(lines))
-    prompt_parts.append(scene_body)
-    if extra_guidance.strip():
-        prompt_parts.append(f"Additional guidance: {extra_guidance.strip()}")
+    parts: list[str] = []
 
-    return "\n\n".join(prompt_parts)
+    # Permission line — tells the model the reference is identity-only.
+    parts.append(
+        "Generate a NEW illustration depicting the scene described below. "
+        "Use the reference image only for the character's identity — face, "
+        "hairstyle, clothing, body type, distinguishing features. You are "
+        "free to depict them in any new pose, action, expression, camera "
+        "angle, or environment that the scene calls for. Do not copy the "
+        "reference image's pose or composition."
+    )
+
+    if char_desc:
+        parts.append(f"Character identity reference: {char_desc}")
+    if style:
+        parts.append(f"Visual style: {style}")
+
+    parts.append(f"Scene to depict: {scene_body}")
+
+    if extra_guidance.strip():
+        parts.append(f"Additional guidance: {extra_guidance.strip()}")
+
+    return "\n\n".join(parts)
