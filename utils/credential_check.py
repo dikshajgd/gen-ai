@@ -20,8 +20,6 @@ def validate_gemini_key(api_key: str) -> Tuple[bool, str]:
 
     try:
         client = genai.Client(api_key=api_key.strip())
-        # Pulling a single model via pager is enough to validate auth without
-        # burning tokens on generation.
         models_iter = client.models.list()
         next(iter(models_iter), None)
         return True, "Gemini key works."
@@ -34,39 +32,81 @@ def validate_gemini_key(api_key: str) -> Tuple[bool, str]:
         return False, f"Gemini validation failed: {detail[:180]}"
 
 
-def validate_fal_key(api_key: str) -> Tuple[bool, str]:
-    """Verify a fal.ai key.
+def validate_kling_direct_keys(access_key: str, secret_key: str) -> Tuple[bool, str]:
+    """Verify a Kling Direct (Open Platform) Access Key + Secret Key pair.
 
-    fal.ai does not expose a cheap whoami endpoint, so we hit the status
-    endpoint with a dummy request id. A valid key returns 404 (not found);
-    an invalid key returns 401/403.
+    We sign a JWT and call the user-info endpoint. A valid pair returns 200;
+    invalid signing or wrong key returns 401/403.
     """
-    if not api_key or not api_key.strip():
-        return False, "Key is empty."
+    if not access_key or not access_key.strip():
+        return False, "Access Key is empty."
+    if not secret_key or not secret_key.strip():
+        return False, "Secret Key is empty."
+
+    try:
+        import jwt
+        import requests
+    except ImportError as exc:
+        return False, f"Missing dependency: {exc}"
+
+    import time
+
+    now = int(time.time())
+    try:
+        token = jwt.encode(
+            {"iss": access_key.strip(), "exp": now + 600, "nbf": now - 5},
+            secret_key.strip(),
+            algorithm="HS256",
+            headers={"alg": "HS256", "typ": "JWT"},
+        )
+    except Exception as exc:
+        return False, f"Failed to sign JWT: {exc}"
+
+    # Hit the image2video listing endpoint (any authenticated GET works).
+    try:
+        resp = requests.get(
+            "https://api-singapore.klingai.com/v1/videos/image2video",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"pageNum": 1, "pageSize": 1},
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        return False, f"Could not reach Kling: {exc}"
+
+    if resp.status_code in (401, 403):
+        return False, "Kling rejected these keys (unauthorized)."
+    if resp.status_code == 200:
+        try:
+            data = resp.json()
+            if data.get("code") == 0:
+                return True, "Kling keys work."
+            return False, f"Kling error: {data.get('message')}"
+        except ValueError:
+            return False, "Kling returned non-JSON."
+    return False, f"Unexpected Kling response (HTTP {resp.status_code})."
+
+
+def validate_replicate_token(api_token: str) -> Tuple[bool, str]:
+    """Verify a Replicate API token by calling the account endpoint."""
+    if not api_token or not api_token.strip():
+        return False, "Token is empty."
 
     try:
         import requests
     except ImportError:
         return False, "requests package is not installed."
 
-    key = api_key.strip()
-    # fal.ai keys are typically "<uuid>:<hex>" — reject obvious junk early.
-    if len(key) < 20:
-        return False, "Key looks too short to be a fal.ai key."
-
     try:
         resp = requests.get(
-            "https://queue.fal.run/fal-ai/kling-video/requests/00000000-0000-0000-0000-000000000000/status",
-            headers={"Authorization": f"Key {key}"},
+            "https://api.replicate.com/v1/account",
+            headers={"Authorization": f"Token {api_token.strip()}"},
             timeout=8,
         )
     except requests.RequestException as exc:
-        return False, f"Could not reach fal.ai: {exc}"
+        return False, f"Could not reach Replicate: {exc}"
 
     if resp.status_code in (401, 403):
-        return False, "fal.ai rejected this key (unauthorized)."
-    if resp.status_code in (200, 202, 404, 422):
-        # 404 = request-id doesn't exist but auth was accepted.
-        # 422 = malformed request-id but auth was accepted.
-        return True, "fal.ai key works."
-    return False, f"Unexpected fal.ai response (HTTP {resp.status_code})."
+        return False, "Replicate rejected this token."
+    if resp.status_code == 200:
+        return True, "Replicate token works."
+    return False, f"Unexpected Replicate response (HTTP {resp.status_code})."

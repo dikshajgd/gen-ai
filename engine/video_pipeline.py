@@ -1,23 +1,36 @@
-"""Video generation pipeline using Kling 3.0 API."""
+"""Video generation pipeline — provider-agnostic.
+
+Picks a `VideoProvider` for each scene (defaults to the project's selected
+provider), submits in parallel, polls for completion, downloads the result.
+"""
 
 from __future__ import annotations
 
 import base64
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from core.models import SceneImage, SceneVideo, SceneStatus, VideoStatus
 from core.constants import KLING_MAX_WORKERS, KLING_TIMEOUT_SEC
-from services.kling_client import KlingClient, KlingAPIError
+from core.models import SceneImage, SceneVideo, VideoStatus
+from services.video_providers import (
+    VideoProvider,
+    VideoProviderError,
+    get_provider,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class VideoPipeline:
-    def __init__(self, kling_client: KlingClient):
-        self.kling = kling_client
+    """Orchestrates video generation across any provider in the registry."""
+
+    def __init__(self, default_provider_id: str, default_model: str):
+        """Construct with a default provider+model. Per-video overrides allowed."""
+        self.default_provider_id = default_provider_id
+        self.default_model = default_model
+
+    # ── Submit ───────────────────────────────────────────────────────
 
     def submit_all(
         self,
@@ -28,32 +41,43 @@ class VideoPipeline:
         duration: float = 5.0,
         aspect_ratio: str = "16:9",
     ) -> list[SceneVideo]:
-        """Submit video generation for all approved images in parallel."""
+        """Submit all approved scenes in parallel, recording provider+task_id per video."""
+
+        provider_id = self.default_provider_id
+        model_name = self.default_model
 
         def _submit_one(idx: int) -> tuple[int, str | None, str | None]:
             img = images[idx]
             prompt = scenes_prompts.get(idx, "")
             try:
-                task_id = self.kling.submit_image_to_video(
-                    image_b64=img.image_b64,
+                provider = get_provider(provider_id)
+                if not img.image_b64:
+                    return idx, None, "Source image missing — cannot generate video."
+                image_bytes = base64.b64decode(img.image_b64)
+                submission = provider.submit_image_to_video(
+                    image_bytes=image_bytes,
                     prompt=prompt,
-                    duration=duration,
+                    duration_sec=duration,
                     aspect_ratio=aspect_ratio,
+                    model=model_name,
                 )
-                return idx, task_id, None
-            except (KlingAPIError, Exception) as e:
+                return idx, submission.task_id, None
+            except VideoProviderError as e:
+                logger.warning("Submit failed for scene %s: %s", idx, e)
                 return idx, None, str(e)
+            except Exception as e:
+                logger.exception("Unexpected submit error for scene %s", idx)
+                return idx, None, f"Unexpected error: {e}"
 
         with ThreadPoolExecutor(max_workers=KLING_MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(_submit_one, idx): idx
-                for idx in approved_indices
-            }
+            futures = {executor.submit(_submit_one, idx): idx for idx in approved_indices}
             for future in as_completed(futures):
                 idx, task_id, error = future.result()
                 video = videos[idx]
                 if task_id:
                     video.kling_task_id = task_id
+                    video.provider = provider_id
+                    video.model_name = model_name
                     video.status = VideoStatus.PROCESSING
                     video.submitted_at = datetime.now()
                     video.error_message = ""
@@ -64,15 +88,17 @@ class VideoPipeline:
 
         return videos
 
+    # ── Poll ────────────────────────────────────────────────────────
+
     def poll_all(self, videos: list[SceneVideo]) -> list[SceneVideo]:
-        """Check status of all processing videos. Download completed ones."""
+        """Poll status of every PROCESSING video, download succeeded ones."""
         for video in videos:
             if video.status != VideoStatus.PROCESSING:
                 continue
             if not video.kling_task_id:
                 continue
 
-            # Check timeout
+            # Timeout guard
             if video.submitted_at:
                 elapsed = (datetime.now() - video.submitted_at).total_seconds()
                 if elapsed > KLING_TIMEOUT_SEC:
@@ -80,46 +106,39 @@ class VideoPipeline:
                     video.error_message = f"Timed out after {KLING_TIMEOUT_SEC}s"
                     continue
 
+            provider_id = video.provider or self.default_provider_id
             try:
-                data = self.kling.get_task_status(video.kling_task_id)
-                task_status = data.get("task_status", "")
-
-                if task_status == "succeed":
-                    # Get video URL from works array
-                    works = data.get("task_result", {}).get("videos", [])
-                    if not works:
-                        works = data.get("works", [])
-                    if works:
-                        video.video_url = works[0].get("resource", {}).get("resource", "")
-                        if not video.video_url:
-                            video.video_url = works[0].get("url", "")
-
-                    if video.video_url:
-                        try:
-                            video_bytes = self.kling.download_video(video.video_url)
-                            video.video_b64 = base64.b64encode(video_bytes).decode()
-                            video.status = VideoStatus.COMPLETED
-                            video.completed_at = datetime.now()
-                        except Exception as e:
-                            video.status = VideoStatus.FAILED
-                            video.error_message = f"Download failed: {e}"
-                            logger.exception("Video download failed for task %s", video.task_id)
-                    else:
-                        video.status = VideoStatus.FAILED
-                        video.error_message = "No video URL in response"
-
-                elif task_status == "failed":
-                    video.status = VideoStatus.FAILED
-                    video.error_message = data.get("task_status_msg", "Generation failed")
-
-                # else: still processing, leave status as-is
-
-            except (KlingAPIError, Exception) as e:
-                # Don't fail on poll errors, just log and try again next cycle
+                provider = get_provider(provider_id)
+                result = provider.get_task_status(video.kling_task_id)
+            except VideoProviderError as e:
                 video.error_message = f"Poll error: {e}"
-                logger.warning("Poll error for task %s: %s", video.task_id, e)
+                logger.warning("Poll error for task %s (provider=%s): %s", video.kling_task_id, provider_id, e)
+                continue
+            except Exception as e:
+                video.error_message = f"Poll error: {e}"
+                logger.exception("Unexpected poll error for task %s", video.kling_task_id)
+                continue
+
+            if result.state == "succeed":
+                video.video_url = result.video_url
+                try:
+                    video_bytes = provider.download_video(result.video_url)
+                    video.video_b64 = base64.b64encode(video_bytes).decode()
+                    video.status = VideoStatus.COMPLETED
+                    video.completed_at = datetime.now()
+                except Exception as e:
+                    video.status = VideoStatus.FAILED
+                    video.error_message = f"Download failed: {e}"
+                    logger.exception("Video download failed for task %s", video.kling_task_id)
+
+            elif result.state == "failed":
+                video.status = VideoStatus.FAILED
+                video.error_message = result.error_message or "Generation failed"
+            # else: still processing
 
         return videos
+
+    # ── Retry single ─────────────────────────────────────────────────
 
     def retry_single(
         self,
@@ -130,7 +149,7 @@ class VideoPipeline:
         duration: float = 5.0,
         aspect_ratio: str = "16:9",
     ) -> SceneVideo:
-        """Retry video generation for a single scene."""
+        """Retry video generation for a single scene with the project's default provider."""
         video = videos[idx]
         img = images[idx]
         video.generation_attempts += 1
@@ -141,17 +160,29 @@ class VideoPipeline:
         video.status = VideoStatus.SUBMITTING
 
         try:
-            task_id = self.kling.submit_image_to_video(
-                image_b64=img.image_b64,
+            provider = get_provider(self.default_provider_id)
+            if not img.image_b64:
+                raise VideoProviderError("Source image missing.")
+            image_bytes = base64.b64decode(img.image_b64)
+            submission = provider.submit_image_to_video(
+                image_bytes=image_bytes,
                 prompt=prompt,
-                duration=duration,
+                duration_sec=duration,
                 aspect_ratio=aspect_ratio,
+                model=self.default_model,
             )
-            video.kling_task_id = task_id
+            video.kling_task_id = submission.task_id
+            video.provider = self.default_provider_id
+            video.model_name = self.default_model
             video.status = VideoStatus.PROCESSING
             video.submitted_at = datetime.now()
-        except (KlingAPIError, Exception) as e:
+        except VideoProviderError as e:
             video.status = VideoStatus.FAILED
             video.error_message = str(e)
+            logger.warning("Retry failed for scene %s: %s", idx, e)
+        except Exception as e:
+            video.status = VideoStatus.FAILED
+            video.error_message = f"Unexpected error: {e}"
+            logger.exception("Unexpected retry error for scene %s", idx)
 
         return video

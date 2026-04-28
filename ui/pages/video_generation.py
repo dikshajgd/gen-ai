@@ -12,19 +12,17 @@ from core.constants import (
     KLING_POLL_INTERVAL_SEC,
 )
 from services.gemini_client import GeminiClient
-from services.kling_client import KlingClient
 from services.script_parser import ScriptParser
+from services.video_providers import (
+    PROVIDER_CATALOG,
+    DEFAULT_PROVIDER_MODEL,
+    VideoProviderError,
+)
+from services.video_providers.registry import is_provider_available
 from engine.video_pipeline import VideoPipeline
 from ui.components.scene_card import render_video_card
 from ui.components.progress_tracker import render_video_progress
 from ui.components.download_panel import render_video_download_panel
-
-
-def _get_kling_client() -> KlingClient | None:
-    access = st.session_state.get("kling_access_key", "")
-    if access:
-        return KlingClient(access)
-    return None
 
 
 def render(project: ProjectState) -> None:
@@ -55,8 +53,10 @@ def render(project: ProjectState) -> None:
     # Video progress
     render_video_progress(project.videos)
 
-    # Settings
+    # ── Provider/model + duration/aspect ratio settings ──
     with st.expander("Video Settings", expanded=True):
+        provider_id, model_name = _render_provider_picker(project)
+
         col1, col2 = st.columns(2)
         with col1:
             duration = st.radio(
@@ -89,7 +89,6 @@ def render(project: ProjectState) -> None:
             height=60,
             key=f"vid_prompt_{idx}",
         )
-        # Save back
         scene.video_prompt = prompts[idx]
 
     # Generate button
@@ -99,26 +98,23 @@ def render(project: ProjectState) -> None:
     ]
     col1, col2 = st.columns([1, 2])
     with col1:
+        provider_ready = is_provider_available(provider_id)
         generate_all = st.button(
             f"Generate All Videos ({len(not_started)})",
-            disabled=len(not_started) == 0,
+            disabled=len(not_started) == 0 or not provider_ready,
             type="primary",
             key="gen_all_vids_btn",
+            help=None if provider_ready else "This provider needs credentials — add them on the welcome screen.",
         )
 
     if generate_all:
-        kling = _get_kling_client()
-        if not kling:
-            st.error("Please set your fal.ai API key in Settings.")
+        try:
+            pipeline = VideoPipeline(provider_id, model_name)
+        except VideoProviderError as e:
+            st.error(str(e))
             return
 
-        pipeline = VideoPipeline(kling)
-
-        # Collect prompts
-        vid_prompts = {}
-        for idx in not_started:
-            scene = project.scenes[idx]
-            vid_prompts[idx] = scene.video_prompt or scene.description
+        vid_prompts = {idx: project.scenes[idx].video_prompt or project.scenes[idx].description for idx in not_started}
 
         with st.spinner("Submitting video generation requests..."):
             project.videos = pipeline.submit_all(
@@ -157,9 +153,8 @@ def render(project: ProjectState) -> None:
                     st.rerun()
 
                 if actions["retry"]:
-                    kling = _get_kling_client()
-                    if kling:
-                        pipeline = VideoPipeline(kling)
+                    try:
+                        pipeline = VideoPipeline(provider_id, model_name)
                         with st.spinner(f"Retrying scene {scene_idx + 1}..."):
                             project.videos[scene_idx] = pipeline.retry_single(
                                 idx=scene_idx,
@@ -170,6 +165,8 @@ def render(project: ProjectState) -> None:
                                 aspect_ratio=aspect_ratio,
                             )
                         st.rerun()
+                    except VideoProviderError as e:
+                        st.error(str(e))
 
     # Download panel
     render_video_download_panel(project.videos, [s.title for s in project.scenes])
@@ -181,14 +178,67 @@ def render(project: ProjectState) -> None:
         st.rerun()
 
 
+# ── Provider selection ───────────────────────────────────────────────
+
+
+def _render_provider_picker(project: ProjectState) -> tuple[str, str]:
+    """Render the provider/model dropdown and persist the choice on the project.
+
+    Returns (provider_id, model_id) — guaranteed non-empty.
+    """
+    # Build label list, marking unavailable providers with a 🔒 prefix.
+    options: list[tuple[str, str, str]] = []  # (provider_id, model_id, ui_label)
+    for pid, mid, label, _notes in PROVIDER_CATALOG:
+        prefix = "" if is_provider_available(pid) else "🔒 "
+        options.append((pid, mid, f"{prefix}{label}"))
+
+    # Default selection: project-saved choice → first available → catalog default.
+    saved = (project.video_provider, project.video_model) if project.video_provider else None
+    fallback = DEFAULT_PROVIDER_MODEL
+
+    def _index_for(pid: str, mid: str) -> int:
+        for i, (p, m, _l) in enumerate(options):
+            if p == pid and m == mid:
+                return i
+        return 0
+
+    initial_idx = (
+        _index_for(*saved) if saved else
+        next((i for i, (p, _m, _l) in enumerate(options) if is_provider_available(p)), _index_for(*fallback))
+    )
+
+    chosen = st.selectbox(
+        "Video provider & model",
+        options=options,
+        index=initial_idx,
+        format_func=lambda opt: opt[2],
+        key="video_provider_model_select",
+    )
+    chosen_pid, chosen_mid, _label = chosen
+
+    # Persist the choice on the project so it survives reload.
+    if (project.video_provider, project.video_model) != (chosen_pid, chosen_mid):
+        project.video_provider = chosen_pid
+        project.video_model = chosen_mid
+
+    if not is_provider_available(chosen_pid):
+        st.warning(
+            "🔒 This provider needs credentials. Open the welcome screen "
+            "(sidebar → 🔑 Manage keys) to add them."
+        )
+
+    return chosen_pid, chosen_mid
+
+
+# ── Polling fragment ─────────────────────────────────────────────────
+
+
 @st.fragment(run_every=int(KLING_POLL_INTERVAL_SEC))
 def _video_poll_fragment() -> None:
-    """Poll Kling for processing videos on a fixed cadence.
+    """Poll the chosen provider for processing videos on a fixed cadence.
 
-    Uses Streamlit's fragment mechanism so the rest of the page isn't
-    re-executed every tick — the fragment reruns every N seconds on its own.
-    Only triggers a full-page rerun when a video actually changes state,
-    which is when the outer metrics need refreshing.
+    Each video records which provider it was submitted to, so the pipeline
+    can poll the right backend even if the project default has since changed.
     """
     project: ProjectState = st.session_state["project"]
 
@@ -196,13 +246,15 @@ def _video_poll_fragment() -> None:
     if before == 0:
         return
 
-    kling = _get_kling_client()
-    if not kling:
-        st.caption("⚠️ Add a fal.ai key in the sidebar to resume polling.")
-        return
+    provider_id = project.video_provider or DEFAULT_PROVIDER_MODEL[0]
+    model_name = project.video_model or DEFAULT_PROVIDER_MODEL[1]
 
-    pipeline = VideoPipeline(kling)
-    project.videos = pipeline.poll_all(project.videos)
+    try:
+        pipeline = VideoPipeline(provider_id, model_name)
+        project.videos = pipeline.poll_all(project.videos)
+    except VideoProviderError as e:
+        st.caption(f"⚠️ Polling paused: {e}")
+        return
 
     after = sum(1 for v in project.videos if v.status == VideoStatus.PROCESSING)
     if after < before:
@@ -215,7 +267,7 @@ def _video_poll_fragment() -> None:
 
 
 def _ensure_video_prompts(project: ProjectState, approved_indices: list[int]) -> None:
-    """Generate video prompts if not already done."""
+    """Generate video prompts for any scene that doesn't have one yet."""
     needs_prompts = [
         idx for idx in approved_indices
         if not project.scenes[idx].video_prompt

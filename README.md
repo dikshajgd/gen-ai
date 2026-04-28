@@ -2,7 +2,7 @@
 
 Character-consistent scene generation and video production, end-to-end, in your browser.
 
-Give it a creative brief and a reference image, paste a script, and Scene Studio will generate on-model scene images (Gemini 2.5 Flash Image) and turn the approved ones into short videos (Kling 2.6 Pro via fal.ai).
+Give it a creative brief and a reference image, paste a script, and Scene Studio will generate on-model scene images (Gemini 2.5 Flash Image) and turn the approved ones into short videos via your choice of **Kling Direct, Google Veo, Wan 2.1, Seedance, or Kling on Replicate**.
 
 ## Features
 
@@ -59,10 +59,26 @@ Every visitor will then use **your** API quota. Only do this for personal or tea
 
 ## Getting the API keys
 
-| Service | Where to get it |
-|---|---|
-| **Gemini** | https://aistudio.google.com/apikey — free tier is sufficient for testing |
-| **fal.ai** (video) | https://fal.ai/dashboard/keys — pay-as-you-go; Kling 2.6 Pro is ~$0.35 per 5-second clip at the time of writing |
+| Service | Where to get it | Models it unlocks |
+|---|---|---|
+| **Gemini** (required) | https://aistudio.google.com/apikey | All image generation + Veo videos |
+| **Kling Open Platform** (optional) | https://app.klingai.com/global → API | Kling 2.6 Pro / 2 Master / 1.6 Pro |
+| **Replicate** (optional) | https://replicate.com/account/api-tokens | Wan 2.1 I2V, Seedance 1 Pro, Kling 2.1 Master |
+
+> Tip: Veo runs entirely on the Gemini key. The simplest path for a free demo is Gemini-only and select Veo as the video backend.
+
+## Admin keys (free trial mode)
+
+If you set `ADMIN_*` keys in Streamlit Cloud Secrets, the welcome screen shows a one-click **"Use admin keys"** button. Anyone who clicks it uses your quota — useful for sharing a friction-free demo, dangerous if a malicious visitor finds the link.
+
+```toml
+ADMIN_GEMINI_API_KEY     = "AIza..."
+ADMIN_KLING_ACCESS_KEY   = "..."   # optional
+ADMIN_KLING_SECRET_KEY   = "..."   # optional
+ADMIN_REPLICATE_API_TOKEN = "r8_..."  # optional
+```
+
+**Kill switch**: delete `ADMIN_GEMINI_API_KEY` from Streamlit Cloud Secrets. The button disappears on the next page load — no redeploy needed.
 
 ## Project structure
 

@@ -77,6 +77,8 @@ class SceneImage(BaseModel):
 class SceneVideo(BaseModel):
     scene_index: int
     status: VideoStatus = VideoStatus.NOT_STARTED
+    # Generic task id from the chosen provider. Field name kept as
+    # `kling_task_id` for backward compat with previously-saved projects.
     kling_task_id: str = ""
     video_url: str = ""
     video_b64: str = ""
@@ -86,6 +88,11 @@ class SceneVideo(BaseModel):
     error_message: str = ""
     submitted_at: datetime | None = None
     completed_at: datetime | None = None
+    # Which provider+model was used to generate this video. Empty for
+    # videos saved before multi-provider support — they're treated as
+    # the project's currently selected provider on resume.
+    provider: str = ""
+    model_name: str = ""
 
     def get_video_bytes(self) -> bytes | None:
         if self.video_b64:
@@ -113,5 +120,9 @@ class ProjectState(BaseModel):
     videos: list[SceneVideo] = Field(default_factory=list)
     gemini_conversation_history: list[dict[str, Any]] = Field(default_factory=list)
     current_step: int = 1
+    # Default video backend selected for this project. Each video also
+    # records its own provider/model in case the user changed mid-project.
+    video_provider: str = ""
+    video_model: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

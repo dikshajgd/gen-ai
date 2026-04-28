@@ -12,7 +12,13 @@ if _this_dir not in sys.path:
 import streamlit as st
 
 from core.models import ProjectState
-from config import get_gemini_api_key, get_kling_access_key, get_kling_secret_key, get_data_dir
+from config import (
+    get_gemini_api_key,
+    get_kling_access_key,
+    get_kling_secret_key,
+    get_replicate_api_token,
+    get_data_dir,
+)
 from utils.logging import setup_logging
 from utils.project_store import ProjectStore
 
@@ -185,6 +191,9 @@ def _init_session_state():
 
     if "kling_secret_key" not in st.session_state:
         st.session_state["kling_secret_key"] = get_kling_secret_key()
+
+    if "replicate_api_token" not in st.session_state:
+        st.session_state["replicate_api_token"] = get_replicate_api_token()
 
     # Show the welcome/BYOK gate on first visit if no Gemini key was injected
     # via secrets/env. Once the user dismisses welcome, it stays dismissed
