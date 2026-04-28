@@ -76,33 +76,72 @@ def render(project: ProjectState) -> None:
     # Generate video prompts if not done
     _ensure_video_prompts(project, approved_indices)
 
-    # Editable video prompts
+    # Eligible scenes: approved images that don't already have a finished/in-progress video.
+    not_started = [
+        idx for idx in approved_indices
+        if project.videos[idx].status in (VideoStatus.NOT_STARTED, VideoStatus.FAILED, VideoStatus.REJECTED)
+    ]
+
+    # Editable video prompts + per-scene "include in this batch" toggle
     st.subheader("Video Prompts")
-    prompts = {}
+    if not_started:
+        sel_col_a, sel_col_b, _spacer = st.columns([1, 1, 6])
+        with sel_col_a:
+            if st.button("Select all", key="vid_select_all"):
+                for idx in not_started:
+                    st.session_state[f"vid_selected_{idx}"] = True
+                st.rerun()
+        with sel_col_b:
+            if st.button("Clear all", key="vid_clear_all"):
+                for idx in not_started:
+                    st.session_state[f"vid_selected_{idx}"] = False
+                st.rerun()
+
     for idx in approved_indices:
         scene = project.scenes[idx]
         video = project.videos[idx]
         if video.status in (VideoStatus.APPROVED,):
             continue
-        prompts[idx] = st.text_area(
-            f"Scene {idx + 1}: {scene.title}",
-            value=scene.video_prompt or scene.description,
-            height=60,
-            key=f"vid_prompt_{idx}",
-        )
-        scene.video_prompt = prompts[idx]
+
+        is_eligible = idx in not_started
+        check_col, prompt_col = st.columns([1, 11])
+        with check_col:
+            if is_eligible:
+                st.checkbox(
+                    "Include",
+                    value=st.session_state.get(f"vid_selected_{idx}", True),
+                    key=f"vid_selected_{idx}",
+                    label_visibility="collapsed",
+                )
+            else:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+        with prompt_col:
+            new_prompt = st.text_area(
+                f"Scene {idx + 1}: {scene.title}",
+                value=scene.video_prompt or scene.description,
+                height=60,
+                key=f"vid_prompt_{idx}",
+                disabled=not is_eligible,
+            )
+            scene.video_prompt = new_prompt
+
+    # Resolve selection — only checked, eligible scenes are submitted
+    selected = [
+        idx for idx in not_started
+        if st.session_state.get(f"vid_selected_{idx}", True)
+    ]
 
     # Generate button
-    not_started = [
-        idx for idx in approved_indices
-        if project.videos[idx].status in (VideoStatus.NOT_STARTED, VideoStatus.FAILED, VideoStatus.REJECTED)
-    ]
     col1, col2 = st.columns([1, 2])
     with col1:
         provider_ready = is_provider_available(provider_id)
+        if len(selected) == len(not_started):
+            btn_label = f"Generate All Videos ({len(selected)})"
+        else:
+            btn_label = f"Generate Selected ({len(selected)} of {len(not_started)})"
         generate_all = st.button(
-            f"Generate All Videos ({len(not_started)})",
-            disabled=len(not_started) == 0 or not provider_ready,
+            btn_label,
+            disabled=len(selected) == 0 or not provider_ready,
             type="primary",
             key="gen_all_vids_btn",
             help=None if provider_ready else "This provider's credentials are missing from app secrets.",
@@ -115,11 +154,11 @@ def render(project: ProjectState) -> None:
             st.error(str(e))
             return
 
-        vid_prompts = {idx: project.scenes[idx].video_prompt or project.scenes[idx].description for idx in not_started}
+        vid_prompts = {idx: project.scenes[idx].video_prompt or project.scenes[idx].description for idx in selected}
 
         with st.spinner("Submitting video generation requests..."):
             project.videos = pipeline.submit_all(
-                approved_indices=not_started,
+                approved_indices=selected,
                 images=project.images,
                 videos=project.videos,
                 scenes_prompts=vid_prompts,
