@@ -27,7 +27,7 @@ def render() -> None:
           <div style="font-size:3rem;">🎬</div>
           <h1 style="margin:0.25rem 0;">Scene Studio</h1>
           <p style="color:#888;margin:0;">
-            Character-consistent scene generation and short-video production.
+            Style-consistent scene generation and short-video production.
           </p>
         </div>
         """,
@@ -40,9 +40,9 @@ def render() -> None:
     with st.container(border=True):
         st.markdown("#### What you can do here")
         st.markdown(
-            "1. **Describe your character** and upload a reference image.  \n"
+            "1. **Pick a visual style** — text description, presets, or a style reference image.  \n"
             "2. **Paste a script** — Scene Studio breaks it into scenes.  \n"
-            "3. **Generate on-model images** for every scene.  \n"
+            "3. **Generate on-style images** for every scene.  \n"
             "4. **Turn approved images into short videos** with Kling, Veo, Wan, or Seedance."
         )
 

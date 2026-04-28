@@ -65,7 +65,7 @@ def main():
 
         # Step indicators
         steps = [
-            ("1. Creative Brief", 1),
+            ("1. Visual Style", 1),
             ("2. Script Input", 2),
             ("3. Image Generation", 3),
             ("4. Video Generation", 4),

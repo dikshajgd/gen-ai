@@ -148,36 +148,30 @@ def _build_prompt(
 ) -> str:
     """Compose the full image-gen prompt.
 
-    Phrasing matters a lot for `gemini-2.5-flash-image` (nano-banana). The
-    model can be over-conservative if it reads the reference image as the
-    *target output* — it'll refuse new poses/actions. We explicitly grant
-    permission to reimagine the character in new scenes while preserving
-    their identity.
+    Style-only model: the reference image (if any) is a STYLE anchor — color
+    palette, technique, mood. Subject and action come entirely from the
+    scene description. This avoids Gemini's "I can't put this person in a
+    new pose" refusal pattern that bites when the reference is interpreted
+    as a character identity to be preserved.
 
-    The consistency prefix is built fresh each call so it survives
-    conversation history truncation. Scene-level `style_override` takes
-    precedence over the global character style prefix.
+    Scene-level `style_override` takes precedence over the project-level
+    style prefix.
     """
     style = scene.style_override.strip() or character.style_prompt_prefix.strip()
-    char_desc = character.character_description.strip()
     scene_body = scene.image_prompt.strip() or scene.description.strip()
 
     parts: list[str] = []
 
-    # Permission line — tells the model the reference is identity-only.
     parts.append(
-        "Generate a NEW illustration depicting the scene described below. "
-        "Use the reference image only for the character's identity — face, "
-        "hairstyle, clothing, body type, distinguishing features. You are "
-        "free to depict them in any new pose, action, expression, camera "
-        "angle, or environment that the scene calls for. Do not copy the "
-        "reference image's pose or composition."
+        "Generate a fresh illustration of the scene described below. "
+        "If a reference image is attached, treat it ONLY as a visual style "
+        "guide — match its color palette, technique, lighting, and mood. "
+        "Do not copy its subject, composition, or pose. Invent the scene "
+        "entirely from the description that follows."
     )
 
-    if char_desc:
-        parts.append(f"Character identity reference: {char_desc}")
     if style:
-        parts.append(f"Visual style: {style}")
+        parts.append(f"Visual style to match: {style}")
 
     parts.append(f"Scene to depict: {scene_body}")
 
