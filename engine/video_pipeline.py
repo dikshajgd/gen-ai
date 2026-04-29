@@ -11,12 +11,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from core.constants import KLING_MAX_WORKERS, KLING_TIMEOUT_SEC
+from core.constants import KLING_MAX_WORKERS
 from core.models import SceneImage, SceneVideo, VideoStatus
 from services.video_providers import (
     VideoProvider,
     VideoProviderError,
     get_provider,
+    timeout_for_provider,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,15 +112,17 @@ class VideoPipeline:
             if not video.kling_task_id:
                 continue
 
-            # Timeout guard
+            provider_id = video.provider or self.default_provider_id
+
+            # Timeout guard — provider-specific because Veo's queue can be much
+            # slower than Kling/Replicate.
             if video.submitted_at:
                 elapsed = (datetime.now() - video.submitted_at).total_seconds()
-                if elapsed > KLING_TIMEOUT_SEC:
+                timeout = timeout_for_provider(provider_id)
+                if elapsed > timeout:
                     video.status = VideoStatus.FAILED
-                    video.error_message = f"Timed out after {KLING_TIMEOUT_SEC}s"
+                    video.error_message = f"Timed out after {timeout}s"
                     continue
-
-            provider_id = video.provider or self.default_provider_id
             try:
                 provider = get_provider(provider_id)
                 result = provider.get_task_status(video.kling_task_id)

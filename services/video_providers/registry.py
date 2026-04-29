@@ -77,6 +77,21 @@ def durations_for_provider(provider_id: str) -> list[float]:
     return DURATIONS_BY_PROVIDER.get(provider_id, [5.0, 10.0])
 
 
+# How long to wait before declaring a submitted job timed-out. Veo's queue can
+# take 10+ minutes per clip, especially for Veo 3 / 8s; Kling and Replicate
+# usually return within a few minutes.
+TIMEOUTS_BY_PROVIDER: dict[str, int] = {
+    PROVIDER_VEO: 1800,            # 30 min
+    PROVIDER_KLING_DIRECT: 900,    # 15 min
+    PROVIDER_REPLICATE: 900,       # 15 min
+}
+
+
+def timeout_for_provider(provider_id: str) -> int:
+    """Per-provider polling timeout in seconds."""
+    return TIMEOUTS_BY_PROVIDER.get(provider_id, 600)
+
+
 def models_for_provider(provider_id: str) -> Iterable[tuple[str, str]]:
     """Yield (model_id, label) pairs for the given provider."""
     for pid, mid, label, _notes in PROVIDER_CATALOG:

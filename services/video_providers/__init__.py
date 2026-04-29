@@ -20,6 +20,7 @@ from services.video_providers.registry import (
     PROVIDER_VEO,
     DEFAULT_PROVIDER_MODEL,
     durations_for_provider,
+    timeout_for_provider,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "PROVIDER_VEO",
     "DEFAULT_PROVIDER_MODEL",
     "durations_for_provider",
+    "timeout_for_provider",
 ]
