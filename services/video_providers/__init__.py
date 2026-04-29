@@ -19,6 +19,7 @@ from services.video_providers.registry import (
     PROVIDER_REPLICATE,
     PROVIDER_VEO,
     DEFAULT_PROVIDER_MODEL,
+    durations_for_provider,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "PROVIDER_REPLICATE",
     "PROVIDER_VEO",
     "DEFAULT_PROVIDER_MODEL",
+    "durations_for_provider",
 ]

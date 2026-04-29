@@ -63,6 +63,20 @@ PROVIDER_CATALOG: list[tuple[str, str, str, str]] = [
 DEFAULT_PROVIDER_MODEL: tuple[str, str] = (PROVIDER_VEO, MODEL_VEO_3_FAST)
 
 
+# Duration options each provider actually accepts. Veo's API rejects anything
+# outside 4-8s; Kling and Replicate take the typical 5s/10s clips.
+DURATIONS_BY_PROVIDER: dict[str, list[float]] = {
+    PROVIDER_VEO: [4.0, 6.0, 8.0],
+    PROVIDER_KLING_DIRECT: [5.0, 10.0],
+    PROVIDER_REPLICATE: [5.0, 10.0],
+}
+
+
+def durations_for_provider(provider_id: str) -> list[float]:
+    """Valid duration options (seconds) for the given provider."""
+    return DURATIONS_BY_PROVIDER.get(provider_id, [5.0, 10.0])
+
+
 def models_for_provider(provider_id: str) -> Iterable[tuple[str, str]]:
     """Yield (model_id, label) pairs for the given provider."""
     for pid, mid, label, _notes in PROVIDER_CATALOG:

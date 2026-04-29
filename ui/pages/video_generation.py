@@ -7,7 +7,6 @@ import streamlit as st
 from core.models import ProjectState, SceneStatus, VideoStatus
 from core.constants import (
     SCENE_GRID_COLUMNS,
-    KLING_DURATIONS,
     KLING_ASPECT_RATIOS,
     KLING_POLL_INTERVAL_SEC,
 )
@@ -18,6 +17,7 @@ from services.video_providers import (
     PROVIDER_CATALOG,
     DEFAULT_PROVIDER_MODEL,
     VideoProviderError,
+    durations_for_provider,
 )
 from services.video_providers.registry import is_provider_available
 from engine.video_pipeline import VideoPipeline
@@ -60,9 +60,14 @@ def render(project: ProjectState) -> None:
 
         col1, col2 = st.columns(2)
         with col1:
+            duration_options = durations_for_provider(provider_id)
+            # Reset stored choice if it isn't valid for the current provider
+            # (e.g. switching from Kling@10s to Veo, which caps at 8s).
+            if st.session_state.get("vid_duration") not in duration_options:
+                st.session_state["vid_duration"] = duration_options[0]
             duration = st.radio(
                 "Duration (seconds):",
-                options=KLING_DURATIONS,
+                options=duration_options,
                 format_func=lambda x: f"{x:.0f}s",
                 key="vid_duration",
             )
